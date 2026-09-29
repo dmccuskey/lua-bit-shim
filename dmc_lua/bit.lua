@@ -3,7 +3,7 @@
 --
 -- a consistent method to load Lua BitOp on various systems
 --
--- Documentation: http://docs.davidmccuskey.com/
+-- Documentation: https://github.com/dmccuskey/lua-bit-shim
 --====================================================================--
 
 

@@ -20,6 +20,7 @@ module_config = {
 	"tests": {
 		"dir": "spec",
 		"files": [
+			"bit_spec.lua"
 		],
 		"requires": [
 		]

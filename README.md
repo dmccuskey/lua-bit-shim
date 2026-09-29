@@ -14,10 +14,9 @@ print( bit.bxor( 0xFF, 0x0F ) )  --> 240
 
 - One name, `bit`, for Solar2D's `plugin.bit` and a pure-Lua fallback
 - Needs nothing installed: numberlua (MIT, by David Manura) comes with it
-- Fails at load with `Bit module not found` when neither loads
+- Signed 32-bit results from both, as in LuaBitOp, so plain-Lua tests match Solar2D
+- Fails at load with `Bit module not found` and each module's error when neither loads
 - Pure Lua 5.1; MIT licensed
-
-The two modules don't give the same results for every value: see [Known Issues](#known-issues).
 
 ## Quick Start
 
@@ -46,6 +45,7 @@ local bit = require 'bit'
 print( bit.band( 0xF0, 0x3C ), bit.bor( 0xF0, 0x0F ), bit.bxor( 0xFF, 0x0F ) )
 print( bit.lshift( 1, 4 ), bit.rshift( 256, 4 ) )
 print( bit.tohex( 0xABCD, 4 ) )
+print( bit.bnot( 0 ), bit.__source )
 ```
 
 Run it:
@@ -58,6 +58,7 @@ lua main.lua
 48	255	240
 16	16
 abcd
+-1	lib.bit.numberlua
 ```
 
 If it shows `module 'bit' not found`, run it from the folder that holds `lua-bit-shim/`.
@@ -69,9 +70,14 @@ To update, pull the repository again (`git -C lua-bit-shim pull`).
 The shim tries each module in the `BITOP_LIBS` list at the top of `bit.lua` and returns the first one that loads:
 
 1. `plugin.bit`: Solar2D's plugin, written in C, with LuaBitOp's API: `tobit`, `tohex`, `bnot`, `band`, `bor`, `bxor`, `lshift`, `rshift`, `arshift`, `rol`, `ror`, `bswap`.
-2. `lib.bit.numberlua`: the pure-Lua fallback, with the same function names (plus `extract`, `replace` and `btest` from Lua 5.2's `bit32`). Its `band`, `bor` and `bxor` take two arguments and ignore any more (`bit.band( 0xFF, 0x0F, 0x03 )` is `15`, not `3`). It's several times slower than the plugin: in a loop over large data, a call per byte adds up, so use lookup tables there.
+2. `lib.bit.numberlua`: the pure-Lua fallback. The shim uses its `bit` sub-table, written to match LuaBitOp: the same functions, signed results (`bit.bnot( 0 )` is `-1`, `bit.lshift( 1, 31 )` is `-2147483648`), and `band`, `bor` and `bxor` take any number of arguments. It's several times slower than the plugin: in a loop over large data, a call per byte adds up, so use lookup tables there.
 
-The module you get keeps its own API; the shim adds nothing to it.
+The shim returns a copy of the module's functions, so the module's own table stays unchanged, with two fields added:
+
+- `__version`: the shim's version, `0.2.0`
+- `__source`: the name of the module it loaded, `plugin.bit` or `lib.bit.numberlua`
+
+When neither loads, the error lists why each one failed.
 
 ## In Solar2D
 
@@ -87,21 +93,23 @@ settings =
 }
 ```
 
-Without it, the shim uses the fallback, which works the same (see [Known Issues](#known-issues)) but slower.
+Without it, the shim uses the fallback, which gives the same results, but slower.
 
 The DMC Solar2D libraries load the shim as `lib.dmc_lua.bit`: their `dmc_corona/lib/dmc_lua/` folder carries a copy of it, as part of [DMC-Lua-Library](https://github.com/dmccuskey/DMC-Lua-Library). dmc-websockets uses it to build, parse and mask frames.
 
 ## Known Issues
 
-- **The fallback's results are unsigned, the plugin's signed.** LuaBitOp returns signed 32-bit numbers and numberlua's top-level functions non-negative ones, so any result with the top bit set differs: `bit.bnot( 0 )` is `-1` with the plugin and `4294967295` with the fallback, `bit.lshift( 1, 31 )` is `-2147483648` and `2147483648`. Results below `0x80000000` are the same. Code tested only under plain Lua can break in Solar2D. numberlua has a sub-table, `bit`, that matches LuaBitOp, but the shim returns the top level.
-- **LuaBitOp itself isn't tried.** In plain Lua (or LuaJIT), an installed LuaBitOp (`luarocks install luabitop`) is also named `bit`, so the shim can't load it by that name and uses the slower fallback. When the shim's folder comes first on `package.path`, it also hides LuaBitOp from other code.
-- **`Bit module not found` hides the real error.** When the fallback fails to load (moved away from `bit.lua`, say), the shim reports only that nothing was found. Run `require 'lib.bit.numberlua'` directly to see why.
-- The version, `0.1.0`, is only in the file: the module returned is the bit module itself.
-- No tests.
+- **LuaBitOp itself isn't tried.** In plain Lua (or LuaJIT), an installed LuaBitOp (`luarocks install luabitop`) is also named `bit`, so the shim can't load it by that name and uses the slower fallback. When the shim's folder comes first on `package.path`, it also hides LuaBitOp from other code. ([#1](https://github.com/dmccuskey/lua-bit-shim/issues/1))
 
 ## Development
 
-Only `dmc_lua/bit.lua` is written here; `dmc_lua/lib/bit/numberlua.lua` is numberlua 0.3.1, copied unchanged. [DMC-Lua-Library](https://github.com/dmccuskey/DMC-Lua-Library) copies both into its `dmc_lua/` with its Snakemake build (the `Snakefile` here registers them), and the DMC Solar2D libraries copy them from there into `dmc_corona/lib/dmc_lua/`.
+Only `dmc_lua/bit.lua` is written here (and its tests); `dmc_lua/lib/bit/numberlua.lua` is numberlua 0.3.1, copied unchanged. [DMC-Lua-Library](https://github.com/dmccuskey/DMC-Lua-Library) copies both into its `dmc_lua/` with its Snakemake build (the `Snakefile` here registers them), and the DMC Solar2D libraries copy them from there into `dmc_corona/lib/dmc_lua/`.
+
+The tests are in `spec/bit_spec.lua`, for [busted](https://lunarmodules.github.io/busted/) under Lua 5.1. They load the fallback, and a stand-in for `plugin.bit`. From the repository's root folder:
+
+```sh
+busted spec
+```
 
 ## License
 
